@@ -84,8 +84,10 @@ class SpotLight(LightSource):
         return np.linalg.norm(intersection - self.position)
 
     def get_intensity(self, intersection):
-        #TODO
-        pass
+        d = self.get_distance_from_light(intersection)
+        V = normalize(self.get_light_ray(intersection).direction)
+        return (self.intensity * V.dot(normalize(self.direction))) / (self.kc + self.kl * d + self.kq * (d ** 2))
+
 
 
 class Ray:
@@ -175,8 +177,16 @@ class Sphere(Object3D):
         self.radius = radius
 
     def intersect(self, ray: Ray):
-        #TODO
-        pass
+        b = 2 * np.dot(ray.direction, ray.origin - self.center)
+        c = np.linalg.norm(ray.origin - self.center) ** 2 - self.radius ** 2
+        delta = b ** 2 - 4 * c
+        if delta > 0:
+            t1 = (-b + np.sqrt(delta)) / 2
+            t2 = (-b - np.sqrt(delta)) / 2
+            if t1 > 0 and t2 > 0:
+                return min(t1, t2), self
+
+        return None, None
 
 
 class Mesh(Object3D):
