@@ -1,4 +1,4 @@
-from helper_classes import *
+from helper_classes_gil import *
 import matplotlib.pyplot as plt
 
 def render_scene(camera, ambient, lights, objects, screen_size, max_depth):

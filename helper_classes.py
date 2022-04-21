@@ -1,4 +1,3 @@
-from tkinter import N
 import numpy as np
 
 
@@ -11,7 +10,7 @@ def normalize(vector):
 # This function gets a vector and the normal of the surface it hit
 # This function returns the vector that reflects from the surface
 def reflected(vector, normal):
-    v = np.array([0,0,0])
+    v = vector - 2 * vector.dot(normal) * normal
     return v
 
 ## Lights
@@ -102,11 +101,11 @@ class Ray:
         min_distance = np.inf
         for obj in objects:
             t, _ = obj.intersect(self)
-            if t and t < min_distance:
+            if t is not None and t < min_distance:
                 nearest_object = obj
                 min_distance = t
         
-        if not t:
+        if nearest_object is None:
             min_distance = None
 
         return nearest_object, min_distance
@@ -133,7 +132,7 @@ class Plane(Object3D):
         if t > 0:
             return t, self
         else:
-            return None
+            return (None, None)
 
 
 
@@ -146,8 +145,8 @@ class Triangle(Object3D):
         self.normal = self.compute_normal()
 
     def compute_normal(self):
-        v = normalize(self.b - self.a)
-        u = normalize(self.c - self.a)
+        v = normalize(self.a - self.b)
+        u = normalize(self.c - self.b)
         n = np.array(normalize(np.cross(u, v)))
         return n
 
@@ -168,7 +167,7 @@ class Triangle(Object3D):
                     np.cross(ca, cp), self.normal) >= 0:
                 return t, self
         
-        return None, None
+        return (None, None)
 
 
 class Sphere(Object3D):
@@ -186,7 +185,7 @@ class Sphere(Object3D):
             if t1 > 0 and t2 > 0:
                 return min(t1, t2), self
 
-        return None, None
+        return (None, None)
 
 
 class Mesh(Object3D):
@@ -215,11 +214,80 @@ class Mesh(Object3D):
         min_triangle = None
         for triangle in self.triangle_list:
             t, _ = triangle.intersect(ray)
-            if t and t < min_t:
+            if t is not None and t < min_t:
                 min_triangle = triangle
                 min_t = t
         
-        if not min_triangle:
+        if min_triangle is None:
             min_t = None
 
         return min_t, min_triangle
+
+
+
+# color functions
+# TODO: CHANGE !!!!!
+def get_normal(obj, ray, hit):
+    normal = None
+    if isinstance(obj, Sphere):
+        normal = normalize(hit - obj.center)
+    elif isinstance(obj, Mesh):
+        _, obj = obj.intersect(ray)
+        normal = normalize(obj.normal)
+    else:
+        normal = normalize(obj.normal)
+
+    return normal
+
+# TODO: CHANGE !!!!!
+def get_ambient_color(ambient, obj):
+    return np.array(obj.ambient * ambient, dtype="float64")
+
+def get_diffuse_color(obj, hit, ray, light):
+    normal = get_normal(obj, ray, hit)
+    return obj.diffuse * light.get_intensity(hit) * normal.dot(light.get_light_ray(hit).direction)
+
+def get_specular_color(obj, hit, ray, light, camera):
+    reflected_ray = reflected(-1 * normalize(light.get_light_ray(hit).direction), get_normal(obj, ray, hit))
+    return obj.specular * light.get_intensity(hit)  * (normalize(hit - camera).dot(reflected_ray)) ** obj.shininess
+
+# TODO: CHANGE !!!!!
+def is_shadow(inter_point, light, objects, is_print=False):
+    ray_to_light = light.get_light_ray(inter_point)
+    _, min_d = ray_to_light.nearest_intersected_object(objects)
+    # if is_print: print(min_d)
+    if min_d is None or min_d >= light.get_distance_from_light(inter_point):
+        return 1  # light.intensity
+
+    return 0
+
+# TODO: CHANGE !!!!!
+def get_reflective_ray(ray, obj, hit_point):
+    N = get_normal(obj, ray, hit_point)
+    return Ray(hit_point, reflected(ray.direction, N))
+
+def get_color(camera, lights, ambient,objects, max_level, level, ray, hit_point, obj):
+    # ambient and emission
+    color = get_ambient_color(ambient, obj)
+
+    for light in lights:
+        if is_shadow(hit_point, light, objects) != 0:
+            color += get_diffuse_color(obj, hit_point, ray, light)
+            color += get_specular_color(obj, hit_point, ray, light, camera)
+    
+    level += 1
+    if level > max_level:
+        return color
+    
+    # reflection
+    ref_ray = get_reflective_ray(ray, obj, hit_point)
+    ref_nearest_object, ref_min_distance = ref_ray.nearest_intersected_object(objects)
+    if ref_nearest_object is None:
+        return color
+    ref_hit_point = ref_ray.origin + ref_min_distance * ref_ray.direction
+    ref_normal = get_normal(ref_nearest_object, ref_ray, ref_hit_point)
+    ref_hit_point += 1e-5 * ref_normal
+    color += obj.reflection * get_color(camera, lights, ambient, objects, max_level, level, ref_ray, ref_hit_point, ref_nearest_object)
+
+
+    return color
