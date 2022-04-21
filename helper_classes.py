@@ -77,7 +77,8 @@ class SpotLight(LightSource):
 
     # This function returns the ray that goes from the light source to a point
     def get_light_ray(self,intersection):
-        return Ray(intersection, normalize(self.position - intersection))
+        d = normalize(self.position - intersection)
+        return Ray(intersection, d)
 
     def get_distance_from_light(self,intersection):
         return np.linalg.norm(intersection - self.position)
@@ -85,7 +86,8 @@ class SpotLight(LightSource):
     def get_intensity(self, intersection):
         d = self.get_distance_from_light(intersection)
         V = normalize(self.get_light_ray(intersection).direction)
-        return (self.intensity * V.dot(normalize(self.direction))) / (self.kc + self.kl * d + self.kq * (d ** 2))
+        f_att = self.kc + self.kl * d + self.kq * (d ** 2)
+        return (self.intensity * V.dot(normalize(self.direction))) / f_att
 
 
 
@@ -100,14 +102,12 @@ class Ray:
         nearest_object = None
         min_distance = np.inf
         for obj in objects:
-            t, _ = obj.intersect(self)
-            if t is not None and t < min_distance:
+            distance, _ = obj.intersect(self)
+            if distance and distance < min_distance:
                 nearest_object = obj
-                min_distance = t
-        
+                min_distance = distance
         if nearest_object is None:
             min_distance = None
-
         return nearest_object, min_distance
 
 
@@ -147,27 +147,28 @@ class Triangle(Object3D):
     def compute_normal(self):
         v = normalize(self.a - self.b)
         u = normalize(self.c - self.b)
-        n = np.array(normalize(np.cross(u, v)))
-        return n
+        return normalize(np.cross(u, v))
 
     # Hint: First find the intersection on the plane
     # Later, find if the point is in the triangle using barycentric coordinates
     def intersect(self, ray: Ray):
         v = self.a - ray.origin
-        t = (np.dot(v, self.normal) / np.dot(self.normal, ray.direction))
-        if t > 0:
-            p = ray.origin + t * ray.direction
-            ab = self.b - self.a
-            ap = p - self.a
-            bc = self.c - self.b
-            bp = p - self.b
-            ca = self.a - self.c
-            cp = p - self.c
-            if np.dot(np.cross(ab, ap), self.normal) >= 0 and np.dot(np.cross(bc, bp), self.normal) >= 0 and np.dot(
-                    np.cross(ca, cp), self.normal) >= 0:
-                return t, self
+        distance = v.dot(self.normal) / (self.normal.dot(ray.direction))
+        if distance <= 0:
+            return (None, None)
+        p = ray.origin + distance * ray.direction
+        ab = self.b - self.a
+        ap = p - self.a
+        bc = self.c - self.b
+        bp = p - self.b
+        ca = self.a - self.c
+        cp = p - self.c
+        l = [(ab, ap), (bc, bp), (ca, cp)]
+        for x, y in l:
+            if np.cross(x,y).dot(self.normal) < 0:
+                return (None, None)
+        return distance, self
         
-        return (None, None)
 
 
 class Sphere(Object3D):
@@ -176,9 +177,11 @@ class Sphere(Object3D):
         self.radius = radius
 
     def intersect(self, ray: Ray):
-        b = 2 * np.dot(ray.direction, ray.origin - self.center)
-        c = np.linalg.norm(ray.origin - self.center) ** 2 - self.radius ** 2
-        delta = b ** 2 - 4 * c
+        v = ray.origin - self.center
+        a = np.linalg.norm(ray.direction) ** 2
+        b = 2 * np.dot(ray.direction, v)
+        c = np.linalg.norm(v) ** 2 - self.radius ** 2
+        delta = b ** 2 - 4 * a * c
         if delta > 0:
             t1 = (-b + np.sqrt(delta)) / 2
             t2 = (-b - np.sqrt(delta)) / 2
@@ -197,11 +200,7 @@ class Mesh(Object3D):
         self.triangle_list = self.create_triangle_list()
 
     def create_triangle_list(self):
-        l = []
-        for a, b, c in self.f_list:
-            l.append(Triangle(self.v_list[a], self.v_list[b], self.v_list[c]))
-
-        return l
+        return [Triangle(self.v_list[a], self.v_list[b], self.v_list[c]) for a, b, c in self.f_list]
 
     def apply_materials_to_triangles(self):
         for t in self.triangle_list:
@@ -226,52 +225,39 @@ class Mesh(Object3D):
 
 
 # color functions
-# TODO: CHANGE !!!!!
-def get_normal(obj, ray, hit):
-    normal = None
+def get_hit_normal(obj, ray, hit):
     if isinstance(obj, Sphere):
-        normal = normalize(hit - obj.center)
+        return normalize(hit - obj.center)
     elif isinstance(obj, Mesh):
-        _, obj = obj.intersect(ray)
-        normal = normalize(obj.normal)
-    else:
-        normal = normalize(obj.normal)
+        return normalize(obj.intersect(ray)[1].normal)
+    return normalize(obj.normal)
 
-    return normal
-
-# TODO: CHANGE !!!!!
 def get_ambient_color(ambient, obj):
-    return np.array(obj.ambient * ambient, dtype="float64")
+    return np.array(ambient * obj.ambient, dtype="float64")
 
 def get_diffuse_color(obj, hit, ray, light):
-    normal = get_normal(obj, ray, hit)
-    return obj.diffuse * light.get_intensity(hit) * normal.dot(light.get_light_ray(hit).direction)
+    normal = get_hit_normal(obj, ray, hit)
+    lightray_dir = light.get_light_ray(hit).direction
+    return obj.diffuse * light.get_intensity(hit) * normal.dot(lightray_dir)
 
 def get_specular_color(obj, hit, ray, light, camera):
-    reflected_ray = reflected(-1 * normalize(light.get_light_ray(hit).direction), get_normal(obj, ray, hit))
+    reflected_ray = reflected(-1 * normalize(light.get_light_ray(hit).direction), get_hit_normal(obj, ray, hit))
     return obj.specular * light.get_intensity(hit)  * (normalize(hit - camera).dot(reflected_ray)) ** obj.shininess
 
-# TODO: CHANGE !!!!!
-def is_shadow(inter_point, light, objects, is_print=False):
-    ray_to_light = light.get_light_ray(inter_point)
-    _, min_d = ray_to_light.nearest_intersected_object(objects)
-    # if is_print: print(min_d)
-    if min_d is None or min_d >= light.get_distance_from_light(inter_point):
-        return 1  # light.intensity
+def shadow_factor(hit, light, objects):
+    lightray = light.get_light_ray(hit)
+    light_distance = light.get_distance_from_light(hit)
+    _, min_d = lightray.nearest_intersected_object(objects)
+    return 1 if min_d is None or min_d >= light_distance else 0
 
-    return 0
-
-# TODO: CHANGE !!!!!
 def get_reflective_ray(ray, obj, hit_point):
-    N = get_normal(obj, ray, hit_point)
-    return Ray(hit_point, reflected(ray.direction, N))
+    return Ray(hit_point, reflected(ray.direction, get_hit_normal(obj, ray, hit_point)))
 
 def get_color(camera, lights, ambient,objects, max_level, level, ray, hit_point, obj):
-    # ambient and emission
     color = get_ambient_color(ambient, obj)
 
     for light in lights:
-        if is_shadow(hit_point, light, objects) != 0:
+        if shadow_factor(hit_point, light, objects) != 0:
             color += get_diffuse_color(obj, hit_point, ray, light)
             color += get_specular_color(obj, hit_point, ray, light, camera)
     
@@ -285,9 +271,8 @@ def get_color(camera, lights, ambient,objects, max_level, level, ray, hit_point,
     if ref_nearest_object is None:
         return color
     ref_hit_point = ref_ray.origin + ref_min_distance * ref_ray.direction
-    ref_normal = get_normal(ref_nearest_object, ref_ray, ref_hit_point)
+    ref_normal = get_hit_normal(ref_nearest_object, ref_ray, ref_hit_point)
     ref_hit_point += 1e-5 * ref_normal
     color += obj.reflection * get_color(camera, lights, ambient, objects, max_level, level, ref_ray, ref_hit_point, ref_nearest_object)
-
 
     return color

@@ -21,7 +21,7 @@ def render_scene(camera, ambient, lights, objects, screen_size, max_depth):
             nearest_object, min_distance = ray.nearest_intersected_object(objects)
             if nearest_object is not None:
                 hit_point = camera + min_distance * direction
-                hit_point += 1e-5 * get_normal(nearest_object, ray, hit_point) #TODO: CHANGE !!!!!
+                hit_point += 1e-5 * get_hit_normal(nearest_object, ray, hit_point) #TODO: CHANGE !!!!!
                 color = get_color(camera, lights, ambient,objects, max_depth, 1, ray, hit_point, nearest_object)
                 
                 # We clip the values between 0 and 1 so all pixel values will make sense.
