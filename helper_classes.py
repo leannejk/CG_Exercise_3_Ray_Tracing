@@ -1,3 +1,4 @@
+from tkinter import N
 import numpy as np
 
 
@@ -24,24 +25,21 @@ class LightSource:
 
 class DirectionalLight(LightSource):
 
-    def __init__(self, intensity):
+    def __init__(self, intensity, direction):
         super().__init__(intensity)
-        # TODO
+        self.direction = direction
 
     # This function returns the ray that goes from the light source to a point
     def get_light_ray(self,intersection_point):
-        # TODO
-        return Ray()
+        return Ray(intersection_point, normalize(self.direction))
 
     # This function returns the distance from a point to the light source
     def get_distance_from_light(self, intersection):
-        #TODO
-        pass
+        return np.inf
 
     # This function returns the light intensity at a point
     def get_intensity(self, intersection):
-        #TODO
-        pass
+        return self.intensity
 
 
 class PointLight(LightSource):
@@ -55,7 +53,7 @@ class PointLight(LightSource):
 
     # This function returns the ray that goes from the light source to a point
     def get_light_ray(self,intersection):
-        return Ray(intersection,normalize(self.position - intersection))
+        return Ray(intersection, normalize(self.position - intersection))
 
     # This function returns the distance from a point to the light source
     def get_distance_from_light(self,intersection):
@@ -70,18 +68,20 @@ class PointLight(LightSource):
 class SpotLight(LightSource):
 
 
-    def __init__(self, intensity):
+    def __init__(self, intensity, position, direction, kc, kl, kq):
         super().__init__(intensity)
-        # TODO
+        self.position = position
+        self.direction = direction
+        self.kc = kc
+        self.kl = kl
+        self.kq = kq
 
     # This function returns the ray that goes from the light source to a point
     def get_light_ray(self,intersection):
-        # TODO
-        return Ray()
+        return Ray(intersection, normalize(self.position - intersection))
 
     def get_distance_from_light(self,intersection):
-        #TODO
-        pass
+        return np.linalg.norm(intersection - self.position)
 
     def get_intensity(self, intersection):
         #TODO
@@ -98,7 +98,15 @@ class Ray:
     def nearest_intersected_object(self, objects):
         nearest_object = None
         min_distance = np.inf
-        #TODO
+        for obj in objects:
+            t, _ = obj.intersect(self)
+            if t and t < min_distance:
+                nearest_object = obj
+                min_distance = t
+        
+        if not t:
+            min_distance = None
+
         return nearest_object, min_distance
 
 
@@ -136,15 +144,29 @@ class Triangle(Object3D):
         self.normal = self.compute_normal()
 
     def compute_normal(self):
-        # TODO
-        n = np.array()
+        v = normalize(self.b - self.a)
+        u = normalize(self.c - self.a)
+        n = np.array(normalize(np.cross(u, v)))
         return n
 
     # Hint: First find the intersection on the plane
     # Later, find if the point is in the triangle using barycentric coordinates
     def intersect(self, ray: Ray):
-        #TODO
-        pass
+        v = self.a - ray.origin
+        t = (np.dot(v, self.normal) / np.dot(self.normal, ray.direction))
+        if t > 0:
+            p = ray.origin + t * ray.direction
+            ab = self.b - self.a
+            ap = p - self.a
+            bc = self.c - self.b
+            bp = p - self.b
+            ca = self.a - self.c
+            cp = p - self.c
+            if np.dot(np.cross(ab, ap), self.normal) >= 0 and np.dot(np.cross(bc, bp), self.normal) >= 0 and np.dot(
+                    np.cross(ca, cp), self.normal) >= 0:
+                return t, self
+        
+        return None, None
 
 
 class Sphere(Object3D):
@@ -167,7 +189,9 @@ class Mesh(Object3D):
 
     def create_triangle_list(self):
         l = []
-        # TODO
+        for a, b, c in self.f_list:
+            l.append(Triangle(self.v_list[a], self.v_list[b], self.v_list[c]))
+
         return l
 
     def apply_materials_to_triangles(self):
@@ -177,5 +201,15 @@ class Mesh(Object3D):
     # Hint: Intersect returns both distance and nearest object.
     # Keep track of both.
     def intersect(self, ray: Ray):
-        #TODO
-        pass
+        min_t = np.inf
+        min_triangle = None
+        for triangle in self.triangle_list:
+            t, _ = triangle.intersect(ray)
+            if t and t < min_t:
+                min_triangle = triangle
+                min_t = t
+        
+        if not min_triangle:
+            min_t = None
+
+        return min_t, min_triangle
