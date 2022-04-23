@@ -1,7 +1,7 @@
 from helper_classes import *
 import matplotlib.pyplot as plt
 
-def render_scene(camera, ambient, lights, objects, screen_size, max_depth):
+def render_scene(camera, ambient, lights, objects, screen_size, max_depth=3):
     width, height = screen_size
     ratio = float(width) / height
     screen = (-1, 1 / ratio, 1, -1 / ratio)  # left, top, right, bottom
@@ -34,7 +34,18 @@ def render_scene(camera, ambient, lights, objects, screen_size, max_depth):
 # TODO
 def your_own_scene():
     camera = np.array([0,0,1])
-    lights = []
-    objects = []
+
+    light_b = SpotLight(intensity=np.array([1, 0, 1]), position=np.array([-0.5, 0.5, 0]), direction=([0, 0, 1]),
+                        kc=0.1, kl=0.1, kq=0.1)
+    light_a = DirectionalLight(intensity=np.array([1, 1, 1]), direction=np.array([0.5, 0.5, 0.5]))
+    lights = [light_a, light_b]
+
+    plane = Plane([0, 1, 0], [0, -0.3, 0])
+    plane.set_material([0.2, 0.2, 0.2], [0.2, 0.2, 0.2], [1, 1, 1], 1000, 0.5)
+    triangle = Triangle([1, 1, 1], [0, 2, -1], [0, -1, -1])
+    triangle.set_material([0.8, 0, 0.4], [0.8, 0, 0.4], [1, 1, 1], 100, 0.5)
+    sphere = Sphere([-0.4, 0.2, -1], 0.5)
+    sphere.set_material([0, 0.5, 0.6], [0, 0.5, 0.6], [0.1, 0.2, 0.3], 1000, 0.5)
+    objects = [plane, triangle, sphere]
     return camera, lights, objects
 
